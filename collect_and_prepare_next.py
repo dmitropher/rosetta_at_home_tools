@@ -25,7 +25,7 @@ parser.add_argument("-collected_jobs", type=str, nargs="*", default=[])
 parser.add_argument("-collected_silents", type=str, nargs="*", default=[])
 parser.add_argument("-resubmit_pending_tags", action="store_true")
 parser.add_argument("-collect_partially_complete", action="store_true")
-parser.add_argument("-assume_missing_mean_done", action="store_true")
+parser.add_argument("-assume_missing_means_done", action="store_true")
 parser.add_argument("-force_recollect_patterns", type=str, nargs="*", default=[])
 parser.add_argument("-recollect_verbose_frac", type=float, default=0.001)
 parser.add_argument("-user", type=str, default="")
@@ -188,7 +188,7 @@ for runname in collectable_runnames:
         continue
     if ( runname not in runname_to_status ):
         print("Missing job?: %s"%runname)
-        if ( args.assume_missing_mean_done ):
+        if ( args.assume_missing_means_done ):
             to_collect.append(runname)
             runname_to_fullname[runname] = runname + "_SAVE_ALL_OUT"
             runname_to_batch[runname] = "*"

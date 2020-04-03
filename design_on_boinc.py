@@ -74,6 +74,7 @@ if (len(sys.argv) == 1):
     eprint(" -extra_files       : space separated list of extra files to add to run")
     eprint(" -per_pdb_files     : score file format (tag last column) of extra files for each pdb. Use =-=> to rename file.")
     eprint(" -add_pdb_ids       : Add pdb ID to REMARK and script_vars")
+    eprint(" -queue             : The queue setting for boinc. How many times should this job run?")
     eprint("                             or")
     eprint(" list of pdbs       : this script will also read in a list of pdbs if not given a silent file")
     sys.exit(1)
@@ -89,6 +90,7 @@ parser.add_argument("-extra_files", type=str, nargs="*", default=[])
 parser.add_argument("-per_pdb_files", type=str, default="")
 parser.add_argument("-add_pdb_ids", action="store_true")
 parser.add_argument("-priority", type=int, default=0)
+parser.add_argument("-queue", type=int, default=1)
 parser.add_argument('pdbs', type=str, help="input pdb", nargs="*")
 
 args = parser.parse_args(sys.argv[1:])
@@ -460,7 +462,7 @@ for ichunk, chunk in enumerate(chunks(list(runnames), 30000)):
             
             f.write("resultfiles = default.out.gz\n")
             # May want to change this later but for now I'm leaving it hard-coded as 1
-            f.write("queue = 1\n")
+            f.write("queue = %i\n"args.queue)
 
 
 num_chunks = ichunk+1
