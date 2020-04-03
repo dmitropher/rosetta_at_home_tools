@@ -21,6 +21,8 @@ import argparse
 import itertools
 import subprocess
 
+import zipfile
+
 from multiprocessing import Pool
 import multiprocessing as mp
 
@@ -70,7 +72,7 @@ if (len(sys.argv) == 1):
     eprint(" -j                 : optional, how many cores you want this script to run on")
     eprint(" -in:file:silent    : the silent file of structures to design")
     eprint(" -extra_files       : space separated list of extra files to add to run")
-    eprint(" -per_pdb_files     : score file format (tag last column) of extra files for each pdb")
+    eprint(" -per_pdb_files     : score file format (tag last column) of extra files for each pdb. Use =-=> to rename file.")
     eprint(" -add_pdb_ids       : Add pdb ID to REMARK and script_vars")
     eprint("                             or")
     eprint(" list of pdbs       : this script will also read in a list of pdbs if not given a silent file")
@@ -110,11 +112,10 @@ if (len(pdbs) == 0):
     if (silent == ''):
         sys.exit("This script needs either a list of pdb files or a silent file")
 
-extra_locals = []
 for file in args.extra_files:
     if ( not os.path.exists(file) ):
         sys.exit("%s doesn't exist"%file)
-extra_files = " ".join(args.extra_files)
+extra_files = args.extra_files
 
 per_pdb_files_dict = defaultdict(list)
 if ( per_pdb_files != "" ):
@@ -133,6 +134,15 @@ if ( per_pdb_files != "" ):
 if ( not os.path.exists("jobs") ):
     os.mkdir("jobs")
 cmd("move_to_scratch jobs")
+
+alpha = list(string.ascii_lowercase)
+number = list(string.digits)
+
+for num in number:
+    for alph in alpha:
+        fol = num + alph
+        if ( not os.path.exists("jobs/%s"%fol) ):
+            os.mkdir("jobs/%s"%fol)
 
 # 
 # 
@@ -174,56 +184,107 @@ def ensure_silent_is_binary( filename ):
     return 'binary.silent'
 
 
+class MyZip:
+
+    def __init__(self, zip_name):
+        self.zip_name = zip_name
+        self.real_files = {}
+        self.virtual_files = {}
+
+    def add_real_file(self, fname, store_name=None):
+        if ( store_name is None ):
+            store_name = os.path.basename(fname)
+
+        if ( store_name in self.real_files ):
+            if (fname != self.real_files[store_name]):
+                print("Error! zip name collision: %s from:"%(store_name))
+                print("    "+real_file_info[store_name])
+                print("    "+file)
+            else:
+                # here it's a true duplicate and we don't care
+                return
+
+        self.real_files[store_name] = fname
+
+    def add_virtual_file(self, fname, contents):
+        if ( fname in self.virtual_files ):
+            if ( contents != self.virtual_files[fname]):
+                print("Error! Name collision on virtual files: %s"%fname)
+
+        self.virtual_files[fname] = contents
+
+
+
+    def write(self):
+        # print("MyZip: " + self.zip_name)
+        with zipfile.ZipFile(self.zip_name, "w", zipfile.ZIP_DEFLATED) as z:
+            for store_name in self.real_files:
+                # print("    " + os.path.basename(real_file))
+                real_file = self.real_files[store_name]
+                z.write(real_file, store_name)
+            for virtual_file in self.virtual_files:
+                # print("    " + virtual_file)
+                contents = self.virtual_files[virtual_file]
+                z.writestr(virtual_file, contents)
+
+
+
+
 input_scores_re = re.compile(r"\nREMARK[^\n]+_input_score")
 id_re = re.compile(r"\nREMARK[^\n]+ID[^\n]+")
 
-def make_run( xml_filename, runname, i, pdbs_per_file, silent_index ):
-   
-    # silent_index = silent_tools.get_silent_index( all_silent_filename )
+def make_run( xml_filename, runname, i, pdbs_per_file, silent_index, sf_open ):
 
-    local_extra_files = ""
-    local_extra_files_delete = ""
+    zip_name = "jobs/" + runname[:2] + "/" + runname + ".zip"
+    myzip = MyZip(zip_name)
+
+    myzip.add_real_file(xml_filename)
+    for file in extra_files:
+        myzip.add_real_file(file)
+
     extra_flags = ""
     id_vars = []
     extra_job_files = ""
-
-    with open(all_silent_filename) as sf:
-        with open( '%s.silent'%runname, 'w' ) as target:
-        # with open( 'in.silent', 'w' ) as target:
-            target.write( silent_tools.silent_header(silent_index) )
-
-            structures = silent_tools.get_silent_structures_true_slice( sf, 
-                        silent_index, i, i+pdbs_per_file, True )
-            tags = silent_index['tags'][i:i+pdbs_per_file]
-
-            for i, pair in enumerate(zip(structures, tags)):
-                s, t = pair
-
-                first_n = s.find("\n")
-
-                # this is a hack to allow variable length backbones on boinc
-                #   specifically it tricks
-                #   /projects/boinc/workspace/boinc/sched/validate_util.cpp
-                #   on line 692 into skipping the coord_check
-                if ( input_scores_re.search( s ) is None ):
-                    s = s[:first_n+1] + "REMARK _input_score 0\n" + s[first_n+1:]
-
-                if ( add_pdb_ids ):
-                    s = id_re.sub("\n", s)
-                    s = s[:first_n+1] + "REMARK ID %s\n"%(t) + s[first_n+1:]
-                    id_vars.append("id%03i=%s"%(i, t))
-
-                for item in per_pdb_files_dict[t]:
-                    local_extra_files += " " + item
-
-
-                target.write( s )
-
-    zip_name = "jobs/" + runname + ".zip"
     extra_job_files += ", " + zip_name
 
+    new_silent_file = ""
+    new_silent_file += silent_tools.silent_header(silent_index)
+
+    structures = silent_tools.get_silent_structures_true_slice( sf_open, 
+                silent_index, i, i+pdbs_per_file, True )
+    tags = silent_index['tags'][i:i+pdbs_per_file]
+
+    for i, pair in enumerate(zip(structures, tags)):
+        s, t = pair
+
+        first_n = s.find("\n")
+
+        # this is a hack to allow variable length backbones on boinc
+        #   specifically it tricks
+        #   /projects/boinc/workspace/boinc/sched/validate_util.cpp
+        #   on line 692 into skipping the coord_check
+        if ( input_scores_re.search( s ) is None ):
+            s = s[:first_n+1] + "REMARK _input_score 0\n" + s[first_n+1:]
+
+        if ( add_pdb_ids ):
+            s = id_re.sub("\n", s)
+            s = s[:first_n+1] + "REMARK ID %s\n"%(t) + s[first_n+1:]
+            id_vars.append("id%03i=%s"%(i, t))
+
+        for item in per_pdb_files_dict[t]:
+            if ( "=-=>" in item ):
+                sp = item.split("=-=>")
+                myzip.add_real_file(sp[0], sp[1])
+            else:
+                myzip.add_real_file(item)
+
+        new_silent_file += s
+
+    myzip.add_virtual_file('%s.silent'%runname, new_silent_file)
+
+
     if ( len(id_vars) > 0 ):
-        temp = "jobs/%s.flags"%runname
+        temp = "jobs/%s/%s.flags"%(runname[:2], runname)
         extra_job_files += ", " + temp
         with open(temp, "w") as f:
             f.write("-script_vars " + " ".join(id_vars) + "\n")
@@ -231,13 +292,7 @@ def make_run( xml_filename, runname, i, pdbs_per_file, silent_index ):
         extra_flags += " @%s.flags"%runname
 
 
-    zip_command = ("zip -rj " + zip_name + " " + xml_filename + ' %s.silent %s;'%(runname, extra_files + local_extra_files)
-        + " rm %s.silent"%(runname))
-
-    # os.system("zip -r " + runname + ".zip " + xml_filename + ' in.silent')
-    # os.remove( '%s.silent'%runname )
-
-    return extra_flags, zip_command, tags, extra_job_files
+    return extra_flags, myzip, tags, extra_job_files
 
 
 
@@ -259,10 +314,10 @@ def init_thread(counter_in):
     global counter
     counter = counter_in
 
-def cmd_thread(*args, **kwargs):
-    global counter
-    counter.value += 1
-    cmd(*args, **kwargs)
+def thread_write_zip(myzip):
+    # global counter
+    # counter.value += 1
+    myzip.write()
 
 
 # do this early to avoid sharing the silent_index
@@ -299,7 +354,8 @@ if ( "/home" in full_xml ):
 if ( "~/" in full_xml ):
     sys.exit("\"~/\" appeared in your xml which is probably wrong")
 
-if ( not re.search(r'="[^"]*/[^"]+/', full_xml) is None ):
+# going to assume no spaces in paths so we can avoid flagging formulas
+if ( not re.search(r'="[^" ]*/[^" ]+/', full_xml) is None ):
     sys.exit("Found a path in your xml which is probably wrong")
         
 
@@ -328,8 +384,6 @@ run_extra_flags = {}
 run_extra_files = {}
 
 # doing it this way to avoid swear words
-alpha = list(string.ascii_lowercase)
-number = list(string.digits)
 def random_name():
     # there has to be a better way...
     return ( np.random.choice(number, 1).item() + "".join(np.random.choice(alpha, 2))
@@ -337,41 +391,41 @@ def random_name():
             + np.random.choice(number, 1).item() + np.random.choice(alpha, 1).item()
             )
 
-print("here")
 # This loop splits up tags in the order that they appear in the silent file
 # it shamelessly steals all of that logic from bcov's silentsplitshuf
 scheduled = 0
-with open(run_filename + ".info", "w") as f:
-    while i < num_tags:
+with open(all_silent_filename) as all_sf_open:
+    with open(run_filename + ".info", "w") as f:
+        while i < num_tags:
 
-        # wouldn't want to accidentally fill up your home dir with 1M files and go over the 10M file limit...
-        if ( scheduled - init_count.value > n_cores * 10 ):
-            time.sleep(0.1)
-            continue
+            # Don't let the main loop get too far ahead of the threads to keep memory low
+            # if ( scheduled - init_count.value > n_cores * 20 ):
+            #     time.sleep(0.1)
+            #     continue
 
-        if i + pdbs_per_file > num_tags:
-            pdbs_per_file = num_tags - i
-        runname = random_name()
-
-        while ( runname in runnames ):
+            if i + pdbs_per_file > num_tags:
+                pdbs_per_file = num_tags - i
             runname = random_name()
 
-        runname += "_" + run_filename
+            while ( runname in runnames ):
+                runname = random_name()
 
-        runnames.add(runname)
+            runname += "_" + run_filename
 
-        these_extra_flags, zip_command, tags, these_extra_files = make_run( xml_filename, runname, i, pdbs_per_file, silent_index )
+            runnames.add(runname)
 
-        run_extra_flags[runname] = these_extra_flags
-        run_extra_files[runname] = these_extra_files
+            these_extra_flags, myzip, tags, these_extra_files = make_run( xml_filename, runname, i, pdbs_per_file, silent_index, all_sf_open )
 
-        # cmd(zip_command, print_output=True)
-        pool.apply_async( cmd_thread, args = ( zip_command, True, True ) )
-        scheduled += 1
+            run_extra_flags[runname] = these_extra_flags
+            run_extra_files[runname] = these_extra_files
 
-        i += pdbs_per_file
+            thread_write_zip(myzip)
+            # pool.apply_async( thread_write_zip, args = ( myzip,) )
+            scheduled += 1
 
-        f.write(" ".join(tags) + " %s\n"%runname )
+            i += pdbs_per_file
+
+            f.write(" ".join(tags) + " %s\n"%runname )
 
 
 # This closes the pool and allows all the processes to complete before proceeding in
@@ -390,12 +444,12 @@ for ichunk, chunk in enumerate(chunks(list(runnames), 30000)):
     # Here is where I actually write the boinc file
     with open( run_filename + '_%i.boinc'%ichunk , 'w' ) as f:
         for i in chunk:
-            f.write("application = rosetta\npriority = %i\n\n"%priority)
+            f.write("application = rosetta\npriority = %i\n\n"%args.priority)
             # f.write("name = %s\n"%run_filename)
             f.write("name = %s_SAVE_ALL_OUT\n"%i)
             f.write("description = %s\n"%i)
             f.write("inputfiles = %s%s\n"%(total_flags_filename, run_extra_files[i]))
-            f.write("arguments = -run:protocol jd2_scripting -parser:protocol " + xml_filename + 
+            f.write("arguments = -run:protocol jd2_scripting -parser:protocol " + local_xml + 
                 # " -out:prefix " + i + "_" +
                 " -database minirosetta_database @" + 
                 local_flag + " -in:file:silent " + i + ".silent -in:file:silent_struct_type binary -silent_gz -mute all" +

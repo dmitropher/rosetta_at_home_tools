@@ -7,11 +7,14 @@ import getpass
 import argparse
 from collections import defaultdict
 
+import re
+
 
 import distutils.spawn
 sys.path.append(os.path.dirname(distutils.spawn.find_executable("silent_tools.py")))
 import silent_tools
 from silent_tools import cmd
+import random
 
 
 parser = argparse.ArgumentParser()
@@ -21,6 +24,10 @@ parser.add_argument("-info_files", type=str, nargs="+")
 parser.add_argument("-collected_jobs", type=str, nargs="*", default=[])
 parser.add_argument("-collected_silents", type=str, nargs="*", default=[])
 parser.add_argument("-resubmit_pending_tags", action="store_true")
+parser.add_argument("-collect_partially_complete", action="store_true")
+parser.add_argument("-assume_missing_mean_done", action="store_true")
+parser.add_argument("-force_recollect_patterns", type=str, nargs="*", default=[])
+parser.add_argument("-recollect_verbose_frac", type=float, default=0.001)
 parser.add_argument("-user", type=str, default="")
 parser.add_argument("-j", type=int, default=1)
 
@@ -30,6 +37,14 @@ args = parser.parse_args(sys.argv[1:])
 user = args.user
 if ( user == "" ):
     user = getpass.getuser()
+
+
+
+cmd("touch scratch_me")
+cmd("move_to_scratch scratch_me")
+scratch_path = os.path.dirname(cmd("readlink -f scratch_me")) + "/"
+
+print("Using scratch path: %s"%scratch_path)
 
 
 
@@ -88,6 +103,9 @@ else:
                     tag_to_runnames[tag].append(runname)
     os.tag_to_runnames = tag_to_runnames
 
+recollect_patterns = []
+for pattern in args.force_recollect_patterns:
+    recollect_patterns.append(re.compile(pattern))
 
 print("Reading collected jobs")
 collected_runnames = set()
@@ -98,6 +116,11 @@ for collected_job_file in args.collected_jobs:
             line = line.strip()
             if (len(line) == 0):
                 continue
+            for pattern in recollect_patterns:
+                if ( not pattern.search(line) is None ):
+                    if ( random.random() < args.recollect_verbose_frac ):
+                        print("Recollecting: %s"%line)
+                    continue
             collected_runnames.add(line)
 
 def parse_silent_file(fname, tags_set):
@@ -145,8 +168,14 @@ for line in boinc_q_raw[1:]:
     runname_to_fullname[runname] = sp[to_col["NAME"]]
     runname_to_batch[runname] = sp[to_col["ID"]].split(".")[0]
 
+    if ( status == "X" ):
+        status = "C"
+
     if ( int(sp[to_col["DECOYS"]]) == 0 ):
         status = "N"
+    else:
+        if ( args.collect_partially_complete ):
+            status = "C"
 
     runname_to_status[runname] = status
 
@@ -159,6 +188,10 @@ for runname in collectable_runnames:
         continue
     if ( runname not in runname_to_status ):
         print("Missing job?: %s"%runname)
+        if ( args.assume_missing_mean_done ):
+            to_collect.append(runname)
+            runname_to_fullname[runname] = runname + "_SAVE_ALL_OUT"
+            runname_to_batch[runname] = "*"
         continue
     if ( runname_to_status[runname] == "C" ):
         to_collect.append(runname)
@@ -183,18 +216,20 @@ with open("tmp", "w") as f:
     for path in all_paths:
         f.write("%s\n"%(path))
 
-print(cmd("cat tmp | parallel -j %i --xargs bzcat > tmp.silent"%args.j))
+print(cmd("cat tmp | parallel -j %i --xargs 'eval bzcat' > %stmp.silent"%(args.j, scratch_path)))
 os.remove("tmp")
 
 print("Removing corrupt models")
-print(cmd("silentdropcorruptmodels tmp.silent > tmp2.silent"))
-os.remove("tmp.silent")
-os.remove("tmp.silent.idx")
+print(cmd("silentdropcorruptmodels %stmp.silent > %stmp2.silent"%(scratch_path, scratch_path)))
+os.remove("%stmp.silent"%scratch_path)
+os.remove("%stmp.silent.idx"%scratch_path)
 
 print("Renaming duplicate names")
-print(cmd("silentls tmp2.silent | silentrename tmp2.silent > collected.silent"))
-os.remove("tmp2.silent")
-os.remove("tmp2.silent.idx")
+print(cmd("silentls %stmp2.silent | silentrename %stmp2.silent > %scollected.silent"%(scratch_path, scratch_path, scratch_path)))
+os.remove("%stmp2.silent"%scratch_path)
+os.remove("%stmp2.silent.idx"%scratch_path)
+
+cmd("ln -s %scollected.silent ."%(scratch_path))
 
 
 print("Reading new tags")
