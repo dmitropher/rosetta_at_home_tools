@@ -462,7 +462,7 @@ for ichunk, chunk in enumerate(chunks(list(runnames), 30000)):
             
             f.write("resultfiles = default.out.gz\n")
             # May want to change this later but for now I'm leaving it hard-coded as 1
-            f.write("queue = %i\n"args.queue)
+            f.write("queue = %i\n"%args.queue)
 
 
 num_chunks = ichunk+1
