@@ -121,6 +121,7 @@ extra_files = args.extra_files
 
 per_pdb_files_dict = defaultdict(list)
 if ( per_pdb_files != "" ):
+    print("Loading per_pdb_files: %s"%(per_pdb_files))
     with open(per_pdb_files) as f:
         for line in f:
             line = line.strip()
@@ -200,8 +201,8 @@ class MyZip:
         if ( store_name in self.real_files ):
             if (fname != self.real_files[store_name]):
                 print("Error! zip name collision: %s from:"%(store_name))
-                print("    "+real_file_info[store_name])
-                print("    "+file)
+                print("    "+self.real_files[store_name])
+                print("    "+fname)
             else:
                 # here it's a true duplicate and we don't care
                 return
@@ -247,7 +248,7 @@ def make_run( xml_filename, runname, i, pdbs_per_file, silent_index, sf_open ):
     extra_flags = ""
     id_vars = []
     extra_job_files = ""
-    extra_job_files += ", " + zip_name
+    extra_job_files += ", " + os.path.realpath(zip_name)
 
     new_silent_file = ""
     new_silent_file += silent_tools.silent_header(silent_index)
@@ -287,7 +288,7 @@ def make_run( xml_filename, runname, i, pdbs_per_file, silent_index, sf_open ):
 
     if ( len(id_vars) > 0 ):
         temp = "jobs/%s/%s.flags"%(runname[:2], runname)
-        extra_job_files += ", " + temp
+        extra_job_files += ", " + os.path.realpath(temp)
         with open(temp, "w") as f:
             f.write("-script_vars " + " ".join(id_vars) + "\n")
 
