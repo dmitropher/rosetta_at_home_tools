@@ -37,17 +37,17 @@ import multiprocessing as mp
 #
 # David K
 
-# 
+#
 # Nate has edited this script so that it can take either a list of pdbs or a silent file, an xml file, flags file, number of jobs to be run, and pdbs per job
 # It then writes this to a boinc submission script for the job specified by the pdbs and xml
-# 
+#
 # Nate B
 
-# 
-# 
+#
+#
 # Read in arguments and determine what kind of files we are working with
-# 
-# 
+#
+#
 
 def cmd(command, wait=True, print_output=False):
 
@@ -147,13 +147,13 @@ for num in number:
         if ( not os.path.exists("jobs/%s"%fol) ):
             os.mkdir("jobs/%s"%fol)
 
-# 
-# 
-# 
+#
+#
+#
 # Functions
-# 
-# 
-# 
+#
+#
+#
 
 
 # This takes a list of pdbs and writes them to all_structs.silent
@@ -253,7 +253,7 @@ def make_run( xml_filename, runname, i, pdbs_per_file, silent_index, sf_open ):
     new_silent_file = ""
     new_silent_file += silent_tools.silent_header(silent_index)
 
-    structures = silent_tools.get_silent_structures_true_slice( sf_open, 
+    structures = silent_tools.get_silent_structures_true_slice( sf_open,
                 silent_index, i, i+pdbs_per_file, True )
     tags = silent_index['tags'][i:i+pdbs_per_file]
 
@@ -328,13 +328,13 @@ pool = Pool( n_cores, initializer=init_thread, initargs=(init_count,) )
 
 
 
-# 
-# 
-# 
+#
+#
+#
 # Here is where it all gets put together and called
-# 
-# 
-# 
+#
+#
+#
 
 assert( os.path.exists( flags_filename ) )
 assert( os.path.exists( xml_filename ) )
@@ -360,7 +360,7 @@ if ( "~/" in full_xml ):
 # going to assume no spaces in paths so we can avoid flagging formulas
 if ( not re.search(r'="[^" ]*/[^" ]+/', full_xml) is None ):
     sys.exit("Found a path in your xml which is probably wrong")
-        
+
 
 # total_xml_filename = os.path.realpath( xml_filename )
 # scriptpath = os.path.dirname(os.path.realpath(__file__))
@@ -452,15 +452,15 @@ for ichunk, chunk in enumerate(chunks(list(runnames), 30000)):
             f.write("name = %s\n"%i)
             f.write("description = %s\n"%i)
             f.write("inputfiles = %s%s\n"%(total_flags_filename, run_extra_files[i]))
-            f.write("arguments = -run:protocol jd2_scripting -parser:protocol " + local_xml + 
+            f.write("arguments = -run:protocol jd2_scripting -parser:protocol " + local_xml +
                 # " -out:prefix " + i + "_" +
-                " -database minirosetta_database @" + 
+                " -database minirosetta_database @" +
                 local_flag + " -in:file:silent " + i + ".silent -in:file:silent_struct_type binary -silent_gz -mute all" +
                 " -out:file:silent_struct_type binary -out:file:silent default.out -in:file:boinc_wu_zip " +
-                i + ".zip" + 
-                run_extra_flags[i] + 
+                i + ".zip" +
+                run_extra_flags[i] +
                 "\n")
-            
+
             f.write("resultfiles = default.out.gz\n")
             # May want to change this later but for now I'm leaving it hard-coded as 1
             f.write("queue = %i\n"%args.queue)
@@ -468,24 +468,25 @@ for ichunk, chunk in enumerate(chunks(list(runnames), 30000)):
 
 num_chunks = ichunk+1
 
-# 
-# 
-# 
+#
+#
+#
 # Writing convenience scripts
-# 
-# 
-# 
+#
+#
+#
 
 
 # create test shell script
 f = open( run_filename + '.test', 'w')
-f.write('/projects/boinc/bin/run_test_rah.pl ' + run_filename + '_0.boinc')
+full_path_run_filename = os.getcwd() + "/" + run_filename
+f.write('/projects/boinc/bin/run_test_rah.pl ' + full_path_run_filename + '_0.boinc')
 f.close()
 
 # create boinc submit shell script
 f = open( run_filename + '.submit', 'w')
 for ichunk in range(num_chunks):
-    f.write("/projects/boinc/bin/boinc_submit " + run_filename + "_%i.boinc\n"%(ichunk))
+    f.write("/projects/boinc/bin/boinc_submit " + full_path_run_filename + "_%i.boinc\n"%(ichunk))
 f.write("\n# Useful scripts (run with - for usage)\n")
 f.write("#   /projects/boinc/bin/boinc_q <batchid>\n")
 f.write("#   /projects/boinc/bin/boinc_resize -size <size> <batchid>\n")
@@ -502,7 +503,7 @@ f.close()
 # f.write("bunzip2 "+job_name+"*.all.out.bz2\n")
 # f.write("\n# Extract silent file for pdbs\n/software/rosetta/latest/bin/extract_pdbs -in:file:silent_struct_type binary -silent_read_through_errors -in:file:silent "+job_name+"*.all.out\n")
 # f.write("\n# Here is an example of running various design selection filters. This will also extract the pdbs.\n");
-# f.write("/home/dekim/src/design_on_boinc/Rosetta_dev/main/source/bin/rosetta_scripts.hdf5.linuxgccrelease -in:file:silent "+job_name+"*.all.out -parser:protocol 
+# f.write("/home/dekim/src/design_on_boinc/Rosetta_dev/main/source/bin/rosetta_scripts.hdf5.linuxgccrelease -in:file:silent "+job_name+"*.all.out -parser:protocol
 #/home/dekim/src/design_on_boinc/inputfiles/filter.xml -beta @/home/dekim/src/design_on_boinc/inputfiles/filter_flags -out:file:scorefile "+job_name+".sc\n")
 # f.close()
 
