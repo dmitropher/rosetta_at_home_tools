@@ -238,7 +238,7 @@ id_re = re.compile(r"\nREMARK[^\n]+ID[^\n]+")
 
 def make_run( xml_filename, runname, i, pdbs_per_file, silent_index, sf_open ):
 
-    zip_name = "jobs/" + runname[:2] + "/" + runname + ".zip"
+    zip_name = "jobs/" + runname[-2:] + "/" + runname + ".zip"
     myzip = MyZip(zip_name)
 
     myzip.add_real_file(xml_filename)
@@ -287,7 +287,7 @@ def make_run( xml_filename, runname, i, pdbs_per_file, silent_index, sf_open ):
 
 
     if ( len(id_vars) > 0 ):
-        temp = "jobs/%s/%s.flags"%(runname[:2], runname)
+        temp = "jobs/%s/%s.flags"%(runname[-2:], runname)
         extra_job_files += ", " + os.path.realpath(temp)
         with open(temp, "w") as f:
             f.write("-script_vars " + " ".join(id_vars) + "\n")
@@ -413,7 +413,7 @@ with open(all_silent_filename) as all_sf_open:
             while ( runname in runnames ):
                 runname = random_name()
 
-            runname += "_" + run_filename
+            runname = run_filename + "_SAVE_ALL_OUT_IGNORE_THE_REST_" + runname
 
             runnames.add(runname)
 
@@ -449,7 +449,7 @@ for ichunk, chunk in enumerate(chunks(list(runnames), 30000)):
         for i in chunk:
             f.write("application = rosetta\npriority = %i\n\n"%args.priority)
             # f.write("name = %s\n"%run_filename)
-            f.write("name = %s_SAVE_ALL_OUT\n"%i)
+            f.write("name = %s\n"%i)
             f.write("description = %s\n"%i)
             f.write("inputfiles = %s%s\n"%(total_flags_filename, run_extra_files[i]))
             f.write("arguments = -run:protocol jd2_scripting -parser:protocol " + local_xml + 
